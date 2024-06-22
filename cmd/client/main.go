@@ -33,11 +33,36 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	defer ch.Close()
 
-	// Keeping the client running to "use" the queue
-	fmt.Println("Client is running. Press Ctrl+C to exit.")
-	forever := make(chan bool)
-	<-forever
+	state := gamelogic.NewGameState(username)
+
+	for loop := true; loop; {
+		inputs := gamelogic.GetInput()
+		if len(inputs) == 0 {
+			continue
+		}
+		switch inputs[0] {
+		case "spawn":
+			if err := state.CommandSpawn(inputs); err != nil {
+				log.Printf("spawn error: %v\n", err)
+			}
+		case "move":
+			_, err := state.CommandMove(inputs)
+			if err != nil {
+				log.Printf("move error: %v\n", err)
+			}
+		case "status":
+			state.CommandStatus()
+		case "help":
+			gamelogic.PrintClientHelp()
+		case "spam":
+			log.Println("Spamming not allowed yet!")
+		case "quit":
+			gamelogic.PrintQuit()
+			loop = false
+		default:
+			log.Println("unknown command")
+		}
+	}
 }

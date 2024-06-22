@@ -43,6 +43,8 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
+		case "help":
+			gamelogic.PrintServerHelp()
 		case "quit":
 			log.Println("shutting down")
 			loop = false
