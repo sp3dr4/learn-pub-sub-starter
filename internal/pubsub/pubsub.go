@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -47,8 +48,6 @@ func (ss QueueType) String() string {
 func DeclareAndBind(
 	conn *amqp.Connection, exchange, queueName, key string, simpleQueueType QueueType,
 ) (*amqp.Channel, amqp.Queue, error) {
-	fmt.Printf("Declaring queue: %s with type %s\n", queueName, simpleQueueType)
-
 	ch, err := conn.Channel()
 	if err != nil {
 		fmt.Println("Failed to open channel:", err)
@@ -73,6 +72,33 @@ func DeclareAndBind(
 		return nil, amqp.Queue{}, err
 	}
 
-	fmt.Println("Queue declared and bound successfully.")
 	return ch, queue, nil
+}
+
+func SubscribeJSON[T any](
+	conn *amqp.Connection, exchange, queueName, key string, simpleQueueType QueueType, handler func(T),
+) error {
+	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
+	if err != nil {
+		return err
+	}
+
+	deliveryChan, err := ch.Consume(queue.Name, "", false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		for m := range deliveryChan {
+			var val T
+			if err := json.Unmarshal(m.Body, &val); err != nil {
+				log.Printf("failed to unmarshal body %v. err: %v\n", m.Body, err)
+				continue
+			}
+			handler(val)
+			m.Ack(false)
+		}
+	}()
+
+	return nil
 }
