@@ -25,6 +25,18 @@ func main() {
 
 	gamelogic.PrintServerHelp()
 
+	err = pubsub.SubscribeGob(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		fmt.Sprintf("%s.*", routing.GameLogSlug),
+		pubsub.QueueDurable,
+		handlerLogs,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	for loop := true; loop; {
 		inputs := gamelogic.GetInput()
 		if len(inputs) == 0 {
@@ -52,4 +64,13 @@ func main() {
 			log.Println("unknown command")
 		}
 	}
+}
+
+func handlerLogs(gl routing.GameLog) pubsub.HandlerOutcome {
+	defer fmt.Print("> ")
+	if err := gamelogic.WriteLog(gl); err != nil {
+		log.Printf("log handler error: %v\n", err)
+		return pubsub.NackRequeue
+	}
+	return pubsub.Ack
 }

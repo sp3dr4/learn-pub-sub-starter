@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -133,17 +134,35 @@ func handlerMove(ch *amqp.Channel, gs *gamelogic.GameState) func(gamelogic.ArmyM
 func handlerWar(ch *amqp.Channel, gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.HandlerOutcome {
 	return func(rw gamelogic.RecognitionOfWar) pubsub.HandlerOutcome {
 		defer fmt.Print("> ")
-		outcome, _, _ := gs.HandleWar(rw)
+		outcome, winner, loser := gs.HandleWar(rw)
+
+		var ackNack pubsub.HandlerOutcome
+		logMsg := ""
 		switch outcome {
 		case gamelogic.WarOutcomeNotInvolved:
-			return pubsub.NackRequeue
+			ackNack = pubsub.NackRequeue
 		case gamelogic.WarOutcomeNoUnits:
-			return pubsub.NackDiscard
+			ackNack = pubsub.NackDiscard
 		case gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon, gamelogic.WarOutcomeDraw:
-			return pubsub.Ack
+			ackNack = pubsub.Ack
+
+			logMsg = fmt.Sprintf("%s won a war against %s", winner, loser)
+			if outcome == gamelogic.WarOutcomeDraw {
+				logMsg = fmt.Sprintf("A war between %s and %s resulted in a draw", winner, loser)
+			}
 		default:
 			log.Printf("unknown war outcome %v\n\n", outcome)
-			return pubsub.NackDiscard
+			ackNack = pubsub.NackDiscard
 		}
+
+		if logMsg != "" {
+			gamelog := routing.GameLog{CurrentTime: time.Now(), Username: rw.Attacker.Username, Message: logMsg}
+			logRoutingKey := fmt.Sprintf("%s.%s", routing.GameLogSlug, rw.Attacker.Username)
+			if err := pubsub.PublishGob(ch, routing.ExchangePerilTopic, logRoutingKey, gamelog); err != nil {
+				return pubsub.NackRequeue
+			}
+		}
+
+		return ackNack
 	}
 }
