@@ -107,7 +107,6 @@ func handlerPause(ch *amqp.Channel, gs *gamelogic.GameState) func(routing.Playin
 	return func(ps routing.PlayingState) pubsub.HandlerOutcome {
 		defer fmt.Print("> ")
 		gs.HandlePause(ps)
-		log.Printf("pause handler ack\n\n")
 		return pubsub.Ack
 	}
 }
@@ -117,18 +116,15 @@ func handlerMove(ch *amqp.Channel, gs *gamelogic.GameState) func(gamelogic.ArmyM
 		defer fmt.Print("> ")
 		switch gs.HandleMove(mv) {
 		case gamelogic.MoveOutComeSafe:
-			log.Printf("move handler ack\n\n")
 			return pubsub.Ack
 		case gamelogic.MoveOutcomeMakeWar:
 			key := fmt.Sprintf("%s.%s", routing.WarRecognitionsPrefix, gs.GetUsername())
 			recognition := gamelogic.RecognitionOfWar{Attacker: mv.Player, Defender: gs.Player}
 			if err := pubsub.PublishJSON(ch, routing.ExchangePerilTopic, key, recognition); err != nil {
-				log.Printf("publish war recognition error: %v\n", err)
+				return pubsub.NackRequeue
 			}
-			log.Printf("move handler nack-requeue\n\n")
-			return pubsub.NackRequeue
+			return pubsub.Ack
 		default:
-			log.Printf("move handler nack-discard\n\n")
 			return pubsub.NackDiscard
 		}
 	}
@@ -140,13 +136,10 @@ func handlerWar(ch *amqp.Channel, gs *gamelogic.GameState) func(gamelogic.Recogn
 		outcome, _, _ := gs.HandleWar(rw)
 		switch outcome {
 		case gamelogic.WarOutcomeNotInvolved:
-			log.Printf("war handler nack-requeue\n\n")
 			return pubsub.NackRequeue
 		case gamelogic.WarOutcomeNoUnits:
-			log.Printf("war handler nack-discard\n\n")
 			return pubsub.NackDiscard
 		case gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon, gamelogic.WarOutcomeDraw:
-			log.Printf("war handler ack\n\n")
 			return pubsub.Ack
 		default:
 			log.Printf("unknown war outcome %v\n\n", outcome)
