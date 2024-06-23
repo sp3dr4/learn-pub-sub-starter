@@ -23,17 +23,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_, _, err = pubsub.DeclareAndBind(
-		conn,
-		routing.ExchangePerilTopic,
-		routing.GameLogSlug,
-		fmt.Sprintf("%s.*", routing.GameLogSlug),
-		pubsub.QueueDurable,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	gamelogic.PrintServerHelp()
 
 	for loop := true; loop; {

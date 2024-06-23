@@ -60,7 +60,7 @@ func DeclareAndBind(
 		simpleQueueType == QueueTransient,
 		simpleQueueType == QueueTransient,
 		false,
-		nil,
+		amqp.Table{"x-dead-letter-exchange": "peril_dlx"},
 	)
 	if err != nil {
 		fmt.Println("Queue declaration failed:", err)
@@ -75,8 +75,26 @@ func DeclareAndBind(
 	return ch, queue, nil
 }
 
+type HandlerOutcome int
+
+const (
+	Ack = iota
+	NackRequeue
+	NackDiscard
+)
+
+var outcomeName = map[HandlerOutcome]string{
+	Ack:         "ack",
+	NackRequeue: "nack-requeue",
+	NackDiscard: "nack-discard",
+}
+
+func (o HandlerOutcome) String() string {
+	return outcomeName[o]
+}
+
 func SubscribeJSON[T any](
-	conn *amqp.Connection, exchange, queueName, key string, simpleQueueType QueueType, handler func(T),
+	conn *amqp.Connection, exchange, queueName, key string, simpleQueueType QueueType, handler func(T) HandlerOutcome,
 ) error {
 	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
 	if err != nil {
@@ -95,8 +113,17 @@ func SubscribeJSON[T any](
 				log.Printf("failed to unmarshal body %v. err: %v\n", m.Body, err)
 				continue
 			}
-			handler(val)
-			m.Ack(false)
+			switch handler(val) {
+			case Ack:
+				log.Println("msg ack")
+				m.Ack(false)
+			case NackRequeue:
+				log.Println("nack requeue")
+				m.Nack(false, true)
+			case NackDiscard:
+				log.Println("nack discard")
+				m.Nack(false, false)
+			}
 		}
 	}()
 
