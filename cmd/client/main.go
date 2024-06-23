@@ -18,22 +18,15 @@ func main() {
 	defer conn.Close()
 	fmt.Println("Connection established")
 
-	username, err := gamelogic.ClientWelcome()
+	ch, err := conn.Channel()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	ch, _, err := pubsub.DeclareAndBind(
-		conn,
-		routing.ExchangePerilDirect,
-		fmt.Sprintf("%s.%s", routing.PauseKey, username),
-		routing.PauseKey,
-		pubsub.QueueTransient,
-	)
+	username, err := gamelogic.ClientWelcome()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer ch.Close()
 
 	state := gamelogic.NewGameState(username)
 
@@ -44,6 +37,18 @@ func main() {
 		routing.PauseKey,
 		pubsub.QueueTransient,
 		handlerPause(state),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username),
+		fmt.Sprintf("%s.*", routing.ArmyMovesPrefix),
+		pubsub.QueueTransient,
+		handlerMove(state),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -60,10 +65,17 @@ func main() {
 				log.Printf("spawn error: %v\n", err)
 			}
 		case "move":
-			_, err := state.CommandMove(inputs)
+			move, err := state.CommandMove(inputs)
 			if err != nil {
 				log.Printf("move error: %v\n", err)
 			}
+			key := fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username)
+			err = pubsub.PublishJSON(ch, routing.ExchangePerilTopic, key, move)
+			if err != nil {
+				log.Printf("publish move error: %v\n", err)
+				continue
+			}
+			log.Printf("move published to %s\n", key)
 		case "status":
 			state.CommandStatus()
 		case "help":
@@ -83,5 +95,13 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
 	return func(ps routing.PlayingState) {
 		defer fmt.Print("> ")
 		gs.HandlePause(ps)
+	}
+}
+
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(mv gamelogic.ArmyMove) {
+		defer fmt.Print("> ")
+		outcome := gs.HandleMove(mv)
+		log.Printf("outcome: %v\n", outcome)
 	}
 }
