@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -83,8 +84,7 @@ func main() {
 				log.Printf("move error: %v\n", err)
 			}
 			key := fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username)
-			err = pubsub.PublishJSON(ch, routing.ExchangePerilTopic, key, move)
-			if err != nil {
+			if err = pubsub.PublishJSON(ch, routing.ExchangePerilTopic, key, move); err != nil {
 				log.Printf("publish move error: %v\n", err)
 				continue
 			}
@@ -94,7 +94,23 @@ func main() {
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			log.Println("Spamming not allowed yet!")
+			if len(inputs) < 2 {
+				log.Println("spam command needs an additional N argument")
+				continue
+			}
+			spamN, err := strconv.Atoi(inputs[1])
+			if err != nil {
+				log.Printf("invalid spam amount %v: %v\n", inputs[1], err)
+				continue
+			}
+			key := fmt.Sprintf("%s.%s", routing.GameLogSlug, username)
+			for range spamN {
+				gamelog := routing.GameLog{CurrentTime: time.Now(), Username: state.GetUsername(), Message: gamelogic.GetMaliciousLog()}
+				if err = pubsub.PublishGob(ch, routing.ExchangePerilTopic, key, gamelog); err != nil {
+					log.Printf("publish spam error: %v\n", err)
+					continue
+				}
+			}
 		case "quit":
 			gamelogic.PrintQuit()
 			loop = false
